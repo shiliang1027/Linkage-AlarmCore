@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009"
+		 xmlns:s="library://ns.adobe.com/flex/spark"
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		 width="100%"
+		 height="100%"
+		 creationComplete="application_creationCompleteHandler(event)"
+		 xmlns:view="com.linkage.module.cms.alarm.pubflow.view.*">
+	<s:layout>
+		<s:BasicLayout/>
+	</s:layout>
+	<fx:Script>
+		<![CDATA[
+			import com.ailk.common.system.logging.ILogger;
+			import com.ailk.common.system.logging.ILoggingTarget;
+			import com.ailk.common.system.logging.Log;
+			import com.ailk.common.system.logging.LogEventLevel;
+			import com.ailk.common.system.logging.targets.MonsterTarget2;
+			import com.linkage.module.cms.alarm.framework.AlarmContainer;
+			import com.linkage.module.cms.alarm.framework.common.event.MenuEvent;
+			import com.linkage.module.cms.alarm.framework.controller.AlarmAction;
+			import com.linkage.module.cms.alarm.framework.module.server.source.DefaultCollection;
+			
+			import mx.collections.ArrayList;
+			import mx.controls.Alert;
+			import mx.core.IVisualElement;
+			import mx.events.FlexEvent;
+			/**
+			 *日志记录器
+			 */
+			private var log:ILogger = Log.getLogger("com.linkage.module.cms.alarm.pubflow.alarm");
+			//按钮数组
+			private var _buttons:Array = null;
+			//外部传入参数
+			private var _params:Object = null;
+			//窗口ID
+			private var _windowId:String = null;
+			//模块名称KEY
+			private var _moduleKey:String = null;
+			//动态过滤告警内容
+			private var _filterAlarm:String = null;
+			//样式名称
+			private var _alarmStyleName:String = null;
+			//过滤器回调函数
+
+			public function get exInfo():String
+			{
+				return _exInfo;
+			}
+
+			public function set exInfo(value:String):void
+			{
+				_exInfo = value;
+			}
+
+			private var _filterCallback:Function = null
+			//模块过滤规则
+			private var _ruleContent:String = null;
+			//是否初始化完成
+			private var _isInitReady:Boolean = false;
+			//数据控制类
+			private var _alarmAction:AlarmAction = null;
+
+			private var _running:Boolean = true;
+
+			private var _exInfo:String;
+			//初始化告警信息
+			public function initInfo(success:Function = null, isCreate:int = 1, exInfo:String = null):void
+			{
+				log.warn("初始化告警信息++++++++++++");
+				this.exInfo = exInfo;
+				//1.初始化参数
+				params.moduleKey = moduleKey;
+				params.ex_info = exInfo;
+
+				//2.设置过滤规则列表
+				var ruleList:ArrayList = new ArrayList();
+				if (ruleContent)
+				{
+					var ruleObject:Object = new Object();
+					ruleObject[AlarmContainer.PARAMKEY_RULECONTENT] = ruleContent;
+					ruleList.addItem(ruleObject);
+				}
+
+				//3.初始化控制器
+				_alarmAction = new AlarmAction(params, DefaultCollection);
+				_alarmAction.regListener(ruleList, function():void
+					{
+						//1.初始化窗口ID
+						var winJsons:Array = _alarmAction.alarmParamMo.winJsons;
+						_windowId = (winJsons.length > 0) ? winJsons[0].windowId : "1";
+						var uniqueKey:String = (winJsons.length > 0) ? winJsons[0].windowUniquekey : '';
+						log.info("当前展示窗口Id=" + _windowId);
+						//2.活动告警窗口
+						flowAlarm.alarmStyleName = _alarmStyleName;
+						flowAlarm.alarmAction = _alarmAction;
+						flowAlarm.windowUniquekey = uniqueKey;
+						flowAlarm.windowId = _windowId;
+						flowAlarm.initView();
+						initAlarmViewInfo();
+						//3.执行回调函数
+						if (success != null)
+						{
+							success.call(this);
+						}
+					}, isCreate);
+			}
+
+			//初始化监听器
+			public function addAlarmListener(type:String, success:Function):void
+			{
+				if (_windowId == null)
+				{
+					setTimeout(function():void
+						{
+							addAlarmListener(type, success);
+						}, 500);
+				}
+				_alarmAction.addEventListener(_windowId + type, function(event:MenuEvent):void
+					{
+						success.call(this, event);
+					});
+
+			}
+
+			// 开始
+			public function start():void
+			{
+				_running = true;
+				if (_alarmAction != null)
+				{
+					_alarmAction.reload(null, false);
+				}
+			}
+
+			// 结束
+			public function stop():void
+			{
+				_running = false;
+				if (_alarmAction != null)
+				{
+					_alarmAction.stopLoad();
+				}
+			}
+
+			//停止加载告警
+			public function stopLoad(isClear:Boolean = false):void
+			{
+				log.warn("【停止加载告警】++++++++++++");
+				if(_alarmAction != null)
+				{
+					_alarmAction.stopLoad(isClear);
+				}
+			}
+
+			//本地测试告警信息
+			public function localTest():void
+			{
+				//1.初始化参数
+				params.moduleKey = moduleKey;
+
+				//2.设置过滤规则列表
+				var ruleList:ArrayList = new ArrayList();
+				if (ruleContent)
+				{
+					var ruleObject:Object = new Object();
+					ruleObject[AlarmContainer.PARAMKEY_RULECONTENT] = ruleContent;
+					ruleList.addItem(ruleObject);
+				}
+
+				//2.初始化控制器
+				_alarmAction = new AlarmAction(params, DefaultCollection);
+				_alarmAction.regListenerDefaultTest();
+				_alarmAction.sendAlarmTest();
+
+				flowAlarm.alarmAction = _alarmAction;
+				flowAlarm.windowId = "91"
+				flowAlarm.initView();
+				initAlarmViewInfo();
+			}
+
+			//初始化告警视图信息
+			public function initAlarmViewInfo():void
+			{
+				_isInitReady = true;
+				if (_filterAlarm != null)
+				{
+					flowAlarm.filterAlarm(_filterAlarm, _filterCallback);
+				}
+			}
+
+			//视图创建
+			public function viewCreation(event:FlexEvent):void
+			{
+				for each (var button:IVisualElement in _buttons)
+				{
+					flowAlarm.addToolButton(button);
+				}
+			}
+
+			/**
+			 *添加按钮工具
+			 * @param button 按钮对象
+			 * @param position 位置 first:前面 last:后面 默认为：前面
+			 */
+			public function addToolButton(button:IVisualElement, position:String = null):void
+			{
+				flowAlarm.addToolButton(button, position);
+			}
+
+			/**
+			 *重载告警
+			 * @param ruleContent 规则内容
+			 */
+			public function reload(ruleContent:String, exInfo:String = null):void
+			{
+				log.warn("【重载告警】ruleContent=" + ruleContent);
+				var ruleList:ArrayList = new ArrayList();
+				var ruleObject:Object = new Object();
+				ruleObject[AlarmContainer.PARAMKEY_RULECONTENT] = ruleContent;
+				ruleList.addItem(ruleObject);
+				log.warn("sceneAlarm  reload...begin...");
+				flowAlarm.initLoadTips(_windowId, true);
+				log.warn("sceneAlarm  reload...end...");
+				if (_alarmAction != null)
+				{
+					_alarmAction.alarmParamFo.addExInfo(exInfo);
+					_alarmAction.reload(ruleList);
+				}
+			}
+
+			/**
+			 *重载告警:上线为最大容量
+			 * @param ruleContent 规则内容
+			 */
+			public function statReload(ruleContent:String, moduleKey:String = null):void
+			{
+				log.warn("【重载告警:上线为最大容量】ruleContent=" + ruleContent);
+				var ruleList:ArrayList = new ArrayList();
+				var ruleObject:Object = new Object();
+				ruleObject[AlarmContainer.PARAMKEY_RULECONTENT] = ruleContent;
+				ruleList.addItem(ruleObject);
+				if (_alarmAction != null)
+				{
+					_alarmAction.statReload(ruleList, moduleKey);
+				}
+			}
+
+			/**
+			 *过滤告警
+			 * @param value 规则内容
+			 * @param callback 回调函数
+			 */
+			public function filterAlarmCallback(value:String, callback:Function = null):void
+			{
+				log.warn("【页面过滤器】ruleContent=" + value);
+				if (_isInitReady)
+				{
+					flowAlarm.filterAlarm(value, callback);
+				}
+				else
+				{
+					_filterAlarm = value;
+					_filterCallback = callback;
+				}
+			}
+
+			public function set filterAlarm(value:String):void
+			{
+				log.info("【页面过滤器】value=" + value);
+				if (_isInitReady)
+				{
+					flowAlarm.filterAlarm(value);
+				}
+				else
+				{
+					_filterAlarm = value;
+				}
+			}
+
+			[Inspectable(category="General", arrayType="mx.core.IVisualElement")]
+			public function set toolButtons(buttons:Array):void
+			{
+				_buttons = buttons;
+			}
+
+			public function get params():Object
+			{
+				return _params;
+			}
+
+			public function set params(value:Object):void
+			{
+				_params = value;
+			}
+
+			[Inspectable(category="General", enumeration="totalflowalarm,dutyalarm,relationalarm,customrulealarm,topoflowalarm,grouptopoflowalarm,groupmonitorflowalarm,categoriesflowalarm,p2pflowalarm,queryalarm,regionalviewflow,statflowalarm,sceneflowalarm", defaultValue="totalflowalarm")]
+			public function get moduleKey():String
+			{
+				return _moduleKey;
+			}
+
+			public function set moduleKey(value:String):void
+			{
+				_moduleKey = value;
+			}
+
+			public function get ruleContent():String
+			{
+				return _ruleContent;
+			}
+
+			public function set ruleContent(value:String):void
+			{
+				log.info("【设置过滤器】ruleContent=" + value);
+				_ruleContent = value;
+			}
+
+			public function set alarmStyleName(value:String):void
+			{
+				_alarmStyleName = value;
+			}
+
+			protected function application_creationCompleteHandler(event:FlexEvent):void
+			{
+				parentApplication.add(this);
+			}
+
+			public function get running():Boolean
+			{
+				return _running;
+			}
+		]]>
+	</fx:Script>
+	<view:AlarmSceneView id="flowAlarm"
+						 windowType="1"
+						 creationComplete="viewCreation(event);">
+
+	</view:AlarmSceneView>
+</s:Group>

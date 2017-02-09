@@ -1,0 +1,626 @@
+<?xml version="1.0" encoding="utf-8"?>
+<panel:Window xmlns:fx="http://ns.adobe.com/mxml/2009"
+			  xmlns:s="library://ns.adobe.com/flex/spark"
+			  xmlns:mx="library://ns.adobe.com/flex/mx"
+			  xmlns:panel="com.linkage.system.component.panel.*"
+			  xmlns:date="com.linkage.module.cms.alarm.framework.common.date.*"
+			  creationComplete="initStartEndTimeSelect()"
+			  close="closeHandler()"
+			  width="330"
+			  height="90"
+			  minimizable="false"
+			  maximizable="false"
+			  dragable="true" xmlns:ns="http://www.asiainfo-linkage.com.cn/flex/components">
+	<panel:states>
+		<s:State name="selField"/>
+		<s:State name="textField"/>
+		<s:State name="timeField"/>
+		<s:State name="iconField"/>
+		<s:State name="titleField"/>
+	</panel:states>
+	<fx:Script>
+		<![CDATA[
+			import com.ailk.common.system.logging.ILogger;
+			import com.ailk.common.system.logging.Log;
+			import com.linkage.module.cms.alarm.framework.common.param.ColumnConstants;
+			import com.linkage.module.cms.alarm.framework.common.param.ParamCache;
+			import com.linkage.module.cms.alarm.framework.common.util.AlarmUtil;
+			import com.linkage.module.cms.alarm.framework.view.AlarmView;
+			import com.linkage.module.cms.alarm.framework.view.core.BaseAlarmView;
+			import com.linkage.system.structure.map.Map;
+			
+			import mx.collections.ArrayCollection;
+			import mx.events.DropdownEvent;
+			import mx.formatters.DateFormatter;
+			import mx.managers.PopUpManager;
+			import mx.utils.StringUtil;
+
+
+			public static const dateFormatter:DateFormatter = new DateFormatter();
+			dateFormatter.formatString = "YYYY-MM-DD JJ:NN:SS";
+			//日志记录器
+			private var log:ILogger = Log.getLogger("com.linkage.module.cms.alarm.framework.view.toolstate.syncalarm.SyncAlarmPanel");
+			//告警窗口过滤是否显示
+			private var _alarmFilterShow:Boolean = false;
+			//告警视图
+			private var _alarmView:BaseAlarmView = null;
+			//窗口ID
+			private var _windowId:String = null;
+			//过滤列
+			private var _field:String = null;
+			//还原列
+			private var _recoverField:String = null;
+			//回调函数
+			private var _callback:Function = null;
+			//状态标示过滤规则
+			private var _iconFilter:String = null;
+			//过滤规则
+			private var _filterRuleStr:String = null;
+			//状态标示下拉框数据
+			[Bindable]
+			private var _iconProvider:ArrayCollection = null;
+			//标签标题
+			[Bindable]
+			private var _labelTitle:String = null;
+			//下拉框Map
+			private var _selMap:Map = new Map();
+			//下拉框Map
+			private var _selectMap:Map = new Map();
+			//下拉框数据
+			[Bindable]
+			private var _selProvider:ArrayCollection = null;
+			//多选下拉框数据
+			[Bindable]
+			private var _dulProvider:ArrayCollection = null;
+
+			//初始化窗口
+			public function initWindow(alarmView:BaseAlarmView):void
+			{
+				_alarmView = alarmView;
+				_windowId = alarmView.windowId;
+			}
+
+			//初始化窗口参数
+			public function initWindowParamInfo(field:String, recoverField:String, title:String, callback:Function, dataArray:Array):void
+			{
+				_field = field;
+				_callback = callback;
+				_recoverField = recoverField;
+
+
+				//设置标题
+				_labelTitle = title;
+				this.title = title + "过滤";
+
+				//显示过滤类型
+				var filterType:String = ParamCache.filterColumnMap[field];
+				showFilterType(filterType);
+				initSelectTimeData(filterType, dataArray);
+
+			}
+
+			//格式化时间
+			public function formatDate(date:Date):String
+			{
+				return dateFormatter.format(date);
+			}
+
+			//初始化下拉框时间选择
+			public function initSelectTimeData(filterType:String, dataArray:Array):void
+			{
+				if (filterType == "4") // 多选
+				{
+					_dulProvider = _selectMap.get(_recoverField);
+					if(_dulProvider == null)
+					{
+						//1.初始化字段信息
+						dataArray.forEach(function(alarm:Object, index:int, array:Array):void
+						{
+							//将自己加入列表
+							_selMap.put(StringUtil.trim(alarm[_recoverField]), alarm[_field]);
+							//将子孙加入列表
+							findAllChildAlarm(alarm);
+						});
+						
+						//2.初始化下拉框值
+						_dulProvider = new ArrayCollection();
+						_selMap.forEach(function(key:String, value:String):void
+						{
+							if (AlarmUtil.checkStrIsNull(key) || AlarmUtil.checkStrIsNull(value))
+							{
+								key = AlarmUtil.checkStrIsNull(key) ? key : "";
+								value = AlarmUtil.checkStrIsNull(value) ? value : "";
+								_dulProvider.addItem({'id': key, 'label': value});
+							}
+						});
+						
+						//3.如果下拉框值为空给默认值
+						if (_dulProvider.length == 0)
+						{
+							_dulProvider.addItem({'id': '', 'label': '无数据'});
+						}
+						
+						_selectMap.put(_recoverField, _dulProvider);
+					}
+				}
+				else if (filterType == "3") //时间选择
+				{
+
+					initStartEndTimeSelect();
+				}
+				else if (filterType == "2") //下拉框
+				{
+					_selProvider = _selectMap.get(_recoverField);
+					if(_selProvider == null)
+					{
+						//1.初始化字段信息
+						dataArray.forEach(function(alarm:Object, index:int, array:Array):void
+						{
+							//将自己加入列表
+							_selMap.put(StringUtil.trim(alarm[_recoverField]), alarm[_field]);
+							//将子孙加入列表
+							findAllChildAlarm(alarm);
+						});
+						
+						//2.初始化下拉框值
+						_selProvider = new ArrayCollection();
+						_selMap.forEach(function(key:String, value:String):void
+						{
+							if (AlarmUtil.checkStrIsNull(key) || AlarmUtil.checkStrIsNull(value))
+							{
+								_selProvider.addItem({'id': key, 'name': value});
+							}
+						});
+						
+						//3.如果下拉框值为空给默认值
+						if (_selProvider.length == 0)
+						{
+							_selProvider.addItem({'id': '', 'name': '无数据'});
+						}
+						
+						_selectMap.put(_recoverField, _selProvider);
+					}
+				}
+				else if (filterType == "0") //状态标示
+				{
+					//2.初始化状态标示
+					_iconProvider = new ArrayCollection();
+					var stateIconObject:Object = ParamCache.stateIconObject[_windowId];
+					if (stateIconObject != null)
+					{
+						//添加配置状态标示
+						var isAckFlag:Boolean = false;
+						var isLstatus:Boolean = false;
+						var isClearFlag:Boolean = false;
+						var stateEnname:String = null;
+						for each (var iconObj:Object in stateIconObject)
+						{
+							var curStateEnname:String = iconObj["stateEnname"];
+							var stateChname:String = iconObj["stateChname"];
+							var stateValue:String = iconObj["stateValue"];
+							if (stateValue == "-1")
+							{
+								continue;
+							}
+							//是否有工程状态
+							if (ColumnConstants.KEY_LocateNeStatus == curStateEnname)
+							{
+								isLstatus = true;
+								continue;
+							}
+							//是否有清除状态标示
+							if (ColumnConstants.KEY_AlarmStatus == curStateEnname)
+							{
+								isClearFlag = true;
+								continue;
+							}
+							//是否有确认状态标示
+							if (ColumnConstants.KEY_AckFlag == curStateEnname)
+							{
+								isAckFlag = true;
+								continue;
+							}
+							if (curStateEnname != stateEnname)
+							{
+								stateEnname = curStateEnname;
+								_iconProvider.addItem({'name': ParamCache.stateIconNameMap[stateEnname], 'type': '1'});
+							}
+							//如果是0直接添加-1
+							if (stateValue == "0")
+							{
+								_iconProvider.addItem({'field': curStateEnname, 'oper': ' in', 'value': '(0,-1)', 'name': stateChname, 'type': '2'});
+							}
+							else
+							{
+								_iconProvider.addItem({'field': curStateEnname, 'oper': '=', 'value': stateValue, 'name': stateChname, 'type': '2'});
+							}
+						}
+						//添加工程状态标示
+						if (isLstatus)
+						{
+							_iconProvider.addItem({'name': "工程状态", 'type': '1'});
+							_iconProvider.addItem({'field': ColumnConstants.KEY_LocateNeStatus, 'oper': ' in', 'value': '(-1,2,3)', 'name': '在网', 'type': '2'});
+							_iconProvider.addItem({'field': ColumnConstants.KEY_LocateNeStatus, 'oper': '=', 'value': '1', 'name': '工程', 'type': '2'});
+						}
+						//添加确认状态标示
+						if (isAckFlag)
+						{
+							_iconProvider.addItem({'name': "告警确认状态", 'type': '1'});
+							_iconProvider.addItem({'field': ColumnConstants.KEY_AckFlag, 'oper': ' in', 'value': '(0,-1)', 'name': '未确认', 'type': '2'});
+							_iconProvider.addItem({'field': ColumnConstants.KEY_AckFlag, 'oper': ' in', 'value': '(1,2)', 'name': '已确认', 'type': '2'});
+						}
+						//添加清除状态标示
+						if (isClearFlag)
+						{
+							_iconProvider.addItem({'name': "告警清除状态", 'type': '1'});
+							_iconProvider.addItem({'field': ColumnConstants.KEY_AlarmStatus, 'oper': ' in', 'value': '(1,-1)', 'name': '未清除', 'type': '2'});
+							_iconProvider.addItem({'field': ColumnConstants.KEY_AlarmStatus, 'oper': ' in', 'value': '(0,2,3)', 'name': '已清除', 'type': '2'});
+						}
+					}
+					//3.如果下拉框值为空给默认值
+					if (_iconProvider.length == 0)
+					{
+						_iconProvider.addItem({'id': '', 'name': '无数据'});
+					}
+				}
+			}
+
+			//获取所有子孙告警列表
+			private function findAllChildAlarm(alarm:Object):void
+			{
+				var children:ArrayCollection = alarm.children;
+				if (children == null)
+				{
+					return;
+				}
+				for each (var child:Object in children)
+				{
+					if (AlarmUtil.checkAlarmSpecialty(alarm))
+					{
+						_selMap.put(child[_recoverField], child[_field]);
+						findAllChildAlarm(child);
+					}
+				}
+			}
+
+			//初始化开始结束时间选择
+			private function initStartEndTimeSelect():void
+			{
+				if (startTimeField != null && endTimeField != null)
+				{
+					//结束时间
+					var date:Date = new Date();
+					endTimeField.text = dateFormatter.format(date);
+					//开始时间
+					date = new Date(date.getTime() - 600 * 1000);
+					startTimeField.text = dateFormatter.format(date);
+				}
+			}
+
+			//显示过滤类型
+			private function showFilterType(filterType:String):void
+			{
+				switch (filterType)
+				{
+					case "0":
+						currentState = "iconField";
+						break;
+					case "4":
+						currentState = "titleField";
+						break;
+					case "3":
+						currentState = "timeField";
+						break;
+					case "2":
+						currentState = "selField";
+						break;
+					case "1":
+					default:
+						currentState = "textField";
+				}
+			}
+
+			//关闭按钮时处理
+			protected function closeHandler():void
+			{
+				//展示或隐藏窗口过滤
+				showHideWindow(_alarmView.getParentApplication);
+			}
+
+			//清空窗口
+			private function clearWindow():void
+			{
+				//文本清空
+				if (neNameField)
+				{
+					neNameField.text = "";
+				}
+
+				//清空下拉容器
+				_selMap.clear();
+				_selProvider = null;
+			}
+
+			//弹出列过滤过滤告警
+			public function showHideWindow(displayObj:DisplayObject):void
+			{
+				if (_alarmFilterShow)
+				{
+					//1.清空窗口
+					clearWindow();
+
+					//2.去除过滤窗口
+					_alarmFilterShow = false;
+					PopUpManager.removePopUp(this);
+				}
+				else
+				{
+					_alarmFilterShow = true;
+					PopUpManager.addPopUp(this, displayObj, false);
+					PopUpManager.centerPopUp(this);
+				}
+			}
+
+			//清空过滤规则
+			public function clearFilterRule():void
+			{
+				_filterRuleStr = null;
+				_iconFilter = null;
+				_selectMap.clear();
+			}
+
+			//验证过滤规则
+			public function checkFilterRule(str:String):Boolean
+			{
+				return _filterRuleStr.indexOf(str) == -1 ? true : false;
+			}
+
+			//替换已经过滤的规律规则
+			private function replaceFilter(field:String, oper:String, value:String):void
+			{
+				var replaceStr:String = field + oper;
+				var index:int = _filterRuleStr.indexOf(replaceStr) + replaceStr.length;
+				var preStr:String = _filterRuleStr.substr(0, index);
+				_filterRuleStr = _filterRuleStr.substr(index);
+				index = _filterRuleStr.indexOf("&");
+				var nextStr:String = (index != -1) ? _filterRuleStr.substr(index) : "";
+				_filterRuleStr = preStr + value + nextStr;
+			}
+
+			//文本过滤
+			protected function textFilter():void
+			{
+				var text:String = neNameField.text;
+				if (AlarmUtil.checkStrIsNull(text))
+				{
+					//添加过滤规则
+					if (_filterRuleStr != null)
+					{
+						if (checkFilterRule(_field))
+						{
+							_filterRuleStr += "&" + _field + "%=" + text;
+						}
+						else
+						{
+							replaceFilter(_field, "%=", text);
+						}
+					}
+					else
+					{
+						_filterRuleStr = _field + "%=" + text;
+					}
+					_callback.call(this);
+					_alarmView.headerFilterAlarm(joinFilterStr(_filterRuleStr, _iconFilter));
+				}
+				closeHandler();
+			}
+
+			//验证是否第一次表头过滤
+			public function checkFirstHeaderFilter():Boolean
+			{
+				return _filterRuleStr == null && _iconFilter == null;
+			}
+
+			//拼接过滤器
+			private function joinFilterStr(filter1:String, filter2:String):String
+			{
+				if (filter1 == null)
+				{
+					return filter2;
+				}
+				if (filter2 == null)
+				{
+					return filter1;
+				}
+				return filter1 + "&" + filter2;
+			}
+
+			//状态标识
+			protected function iconFilter():void
+			{
+				var oper:String = iconField.selectedItem.oper;
+				var field:String = iconField.selectedItem.field;
+				var value:String = iconField.selectedItem.value;
+				if (AlarmUtil.checkStrIsNull(field) && AlarmUtil.checkStrIsNull(value))
+				{
+					_iconFilter = field + oper + value;
+				}
+				_callback.call(this);
+				_alarmView.headerFilterAlarm(joinFilterStr(_filterRuleStr, _iconFilter));
+				closeHandler();
+			}
+
+			//下拉框过滤
+			protected function selFilter():void
+			{
+				var value:String = selField.selectedItem.id;
+				//添加过滤规则
+				if (_filterRuleStr != null)
+				{
+					if (checkFilterRule(_recoverField))
+					{
+						_filterRuleStr += "&" + _recoverField + "=" + value;
+					}
+					else
+					{
+						replaceFilter(_recoverField, "=", value);
+					}
+				}
+				else
+				{
+					_filterRuleStr = _recoverField + "=" + value;
+				}
+				_callback.call(this);
+				_alarmView.headerFilterAlarm(joinFilterStr(_filterRuleStr, _iconFilter));
+				closeHandler();
+			}
+
+			//多选过滤
+			protected function dulSelFilter():void
+			{
+				var selArray:ArrayCollection = titleField.selectedItemArray;
+				if (selArray == null || selArray.length == 0)
+				{
+					AlarmUtil.showMessage("请选择要过滤的内容！");
+					return;
+				}
+				var value:String = null;
+				for each (var obj:Object in selArray)
+				{
+					if (value == null)
+					{
+						value = obj.id;
+					}
+					else
+					{
+						value += "," + obj.id;
+					}
+				}
+				//添加过滤规则
+				if (_filterRuleStr != null)
+				{
+					if (checkFilterRule(_recoverField))
+					{
+						_filterRuleStr += "&" + _recoverField + " in(" + value + ")";
+					}
+					else
+					{
+						replaceFilter(_recoverField, " in", "(" + value + ")");
+					}
+				}
+				else
+				{
+					_filterRuleStr = _recoverField + " in(" + value + ")";
+				}
+				_callback.call(this);
+				_alarmView.headerFilterAlarm(joinFilterStr(_filterRuleStr, _iconFilter));
+				closeHandler();
+			}
+
+			//时间过滤
+			protected function timeFilter():void
+			{
+				var startDate:Date = DateFormatter.parseDateString(startTimeField.text);
+				var endDate:Date = DateFormatter.parseDateString(endTimeField.text);
+				var startTime:int = int(startDate.getTime() / 1000);
+				var endTime:int = int(endDate.getTime() / 1000);
+				if (startTime > endTime)
+				{
+					AlarmUtil.showMessage("开始时间不能大于结束时间！");
+					return;
+				}
+				//添加过滤规则
+				if (_filterRuleStr != null)
+				{
+					if (checkFilterRule(_recoverField))
+					{
+						_filterRuleStr += "&" + _recoverField + "$" + startTime + "to" + endTime;
+					}
+					else
+					{
+						replaceFilter(_recoverField, "$", startTime + "to" + endTime);
+					}
+				}
+				else
+				{
+					_filterRuleStr = _recoverField + "$" + startTime + "to" + endTime;
+				}
+				_callback.call(this);
+				_alarmView.headerFilterAlarm(joinFilterStr(_filterRuleStr, _iconFilter));
+				closeHandler();
+			}
+		]]>
+	</fx:Script>
+	<mx:VBox width="100%"
+			 height="100%"
+			 paddingTop="5"
+			 verticalCenter="0">
+		<mx:HBox width="100%"
+				 height="100%"
+				 includeIn="textField">
+			<s:Label text="{_labelTitle}"/>
+			<mx:TextInput id="neNameField"
+						  width="160"/>
+			<s:Button label="过 滤"
+					  click="textFilter()"/>
+		</mx:HBox>
+		<mx:HBox width="100%"
+				 height="100%"
+				 includeIn="selField">
+			<s:Label text="{_labelTitle}"/>
+			<mx:ComboBox id="selField"
+						 labelField="name"
+						 dataProvider="{_selProvider}"
+						 rowCount="10"
+						 width="160"/>
+			<s:Button label="过 滤"
+					  click="selFilter()"/>
+		</mx:HBox>
+		<mx:HBox width="100%"
+				 height="100%"
+				 includeIn="titleField">
+			<s:Label text="{_labelTitle}"/>
+			<ns:MultiEditDropDownList id="titleField" 
+									  allowMultipleSelecte="true"
+									  width="190" 
+									  dataProvider="{_dulProvider}" 
+									  prompt="请选择"
+									  skinClass="com.ailk.common.ui.components.dynamicdropdown.skin.MultiEditDropDownListSkin"/>
+			<s:Button label="过 滤"
+					  click="dulSelFilter()"/>
+		</mx:HBox>
+		<mx:HBox width="100%"
+				 height="100%"
+				 includeIn="iconField">
+			<s:Label text="{_labelTitle}"/>
+			<mx:ComboBox id="iconField"
+						 labelField="name"
+						 dataProvider="{_iconProvider}"
+						 itemRenderer="{new ClassFactory(IconComboBoxRenderer)}"
+						 rowCount="10"
+						 width="160"/>
+			<s:Button label="过 滤"
+					  click="iconFilter()"/>
+		</mx:HBox>
+		<mx:VBox width="100%"
+				 height="100%"
+				 includeIn="timeField">
+			<mx:HBox width="100%">
+				<s:Label text="开始时间:"/>
+				<date:UXDateField id="startTimeField"
+								  labelFunction="formatDate"
+								  yearNavigationEnabled="true"
+								  width="182"/>
+			</mx:HBox>
+			<mx:HBox width="100%">
+				<s:Label text="结束时间:"/>
+				<date:UXDateField id="endTimeField"
+								  labelFunction="formatDate"
+								  yearNavigationEnabled="true"
+								  width="182"/>
+				<s:Button label="过 滤"
+						  click="timeFilter()"/>
+			</mx:HBox>
+		</mx:VBox>
+	</mx:VBox>
+</panel:Window>

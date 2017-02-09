@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<panel:Window xmlns:fx="http://ns.adobe.com/mxml/2009"
+			  xmlns:s="library://ns.adobe.com/flex/spark"
+			  xmlns:mx="library://ns.adobe.com/flex/mx"
+			  xmlns:panel="com.linkage.system.component.panel.*"
+			  xmlns:date="com.linkage.module.cms.alarm.framework.common.date.*"
+			  title="告警同步"
+			  width="268"
+			  height="136"
+			  minimizable="false"
+			  maximizable="false"
+			  closable="false"
+			  dragable="true">
+	<fx:Script>
+		<![CDATA[
+			import com.linkage.module.cms.alarm.framework.common.event.AlarmViewEvent;
+			import com.linkage.module.cms.alarm.framework.common.util.AlarmUtil;
+			import com.linkage.module.cms.alarm.framework.controller.AlarmAction;
+			import com.linkage.module.cms.alarm.framework.controller.fo.AlarmParamFo;
+			import com.ailk.common.system.logging.ILogger;
+			import com.ailk.common.system.logging.Log;
+
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+			import mx.formatters.DateFormatter;
+			import mx.managers.PopUpManager;
+
+			//日志记录器
+			private var log:ILogger = Log.getLogger("com.linkage.module.cms.alarm.framework.view.toolstate.syncalarm.SyncAlarmPanel");
+			//类型转换器
+			public static const dateFormatter:DateFormatter = new DateFormatter();
+			dateFormatter.formatString = "YYYY-MM-DD JJ:NN:SS";
+			//显示面板是否展示
+			private var _syncAlarmWinShow:Boolean = false;
+			//传入参数FO
+			private var _alarmParamFo:AlarmParamFo = null;
+			// 数据控制中心
+			private var _alarmAction:AlarmAction = null;
+			//窗口ID
+			private var _windowId:String = null;
+			//进度条总数
+			private var _proTotal:Number = 100;
+			//当前进度
+			private var _proCur:Number = 0;
+			//进度条关键字
+			private var _proKey:uint = 0;
+
+			public function initPanel(alarmAction:AlarmAction, windowType:int, windowId:String):void
+			{
+				//1.初始化参数
+				_windowId = windowId;
+				_alarmAction = alarmAction;
+				_alarmParamFo = alarmAction.alarmParamFo;
+
+				//2.监听告警同步结束和异常
+				alarmAction.addEventListener(_windowId + windowType + AlarmViewEvent.ALARM_SYNC_ELH, syncAlarmEnd);
+				alarmAction.addEventListener(_windowId + windowType + AlarmViewEvent.ALARM_SYNC_LHE, syncAlarmError);
+			}
+
+			//格式化时间
+			public function formatDate(date:Date):String
+			{
+				return dateFormatter.format(date);
+			}
+
+			//同步按钮 回调
+			protected function syncBtnClick():void
+			{
+				//1.拼装参数
+				var params:Object = new Object();
+				params["windowId"] = _windowId;
+				params["uuid"] = _alarmParamFo.uuid;
+				params["areaId"] = _alarmParamFo.areaId;
+				params["moduleKey"] = _alarmParamFo.moduleKey;
+				params["startDaltime"] = startTimeField.text;
+				params["endDaltime"] = endTimeField.text;
+
+				//屏蔽同步告警和关闭按钮告警
+				syncBtn.enabled = false;
+				closeBtn.enabled = false;
+				startTimeField.enabled = false;
+				endTimeField.enabled = false;
+				//2.同步告警
+				_alarmAction.syncAlarm(params, function():void
+					{
+						//1.放开中断按钮和进度条
+						progressBar.visible = true;
+						interruptBtn.enabled = true;
+
+						//2.开始进度条
+						startProgressBar();
+					}, function():void
+					{
+						syncBtn.enabled = true;
+						closeBtn.enabled = true;
+						startTimeField.enabled = true;
+						endTimeField.enabled = true;
+						AlarmUtil.showMessage("同步告警失败，请重试!");
+					});
+			}
+
+			//中断按钮 回调
+			protected function interruptBtnClick():void
+			{
+				//1.拼装参数
+				var params:Object = new Object();
+				params["windowId"] = _windowId;
+				params["uuid"] = _alarmParamFo.uuid;
+				params["areaId"] = _alarmParamFo.areaId;
+				params["moduleKey"] = _alarmParamFo.moduleKey;
+
+				//屏蔽中断按钮
+				interruptBtn.enabled = false;
+				//2.中断按钮
+				_alarmAction.shutSync(params, function():void
+					{
+						//1.放开同步告警和关闭按钮告警
+						syncBtn.enabled = true;
+						closeBtn.enabled = true;
+						progressBar.visible = false;
+						startTimeField.enabled = true;
+						endTimeField.enabled = true;
+
+						//2.结束滚动条
+						stopProgressBar();
+					}, function():void
+					{
+						interruptBtn.enabled = true;
+						AlarmUtil.showMessage("中断同步失败，请重试!");
+					});
+			}
+
+			//告警同步结束
+			private function syncAlarmEnd(event:AlarmViewEvent):void
+			{
+				//1.结束定时调度更新进度条
+				clearInterval(_proKey);
+
+				//2.设置加速进度条更新
+				_proCur = 96;
+				_proKey = setInterval(function():void
+					{
+						//加载到100%就结束同步
+						if (_proCur == 100)
+						{
+							//1.初始化其他参数
+							syncBtn.enabled = true;
+							closeBtn.enabled = true;
+							progressBar.visible = false;
+							interruptBtn.enabled = false;
+							startTimeField.enabled = true;
+							endTimeField.enabled = true;
+
+							//2.结束进度条
+							stopProgressBar();
+
+							//3.提示失败
+							AlarmUtil.showMessage("同步告警完成!", "消息", Alert.OK, null, function():void
+								{
+									showHideWindow();
+								});
+							return;
+						}
+						progressBar.setProgress(_proCur++, _proTotal);
+						progressBar.label = "正在同步告警 " + _proCur + "%";
+					}, 200);
+			}
+
+			//告警同步异常
+			private function syncAlarmError(event:AlarmViewEvent):void
+			{
+				//1.初始化其他参数
+				syncBtn.enabled = true;
+				closeBtn.enabled = true;
+				progressBar.visible = false;
+				interruptBtn.enabled = false;
+				startTimeField.enabled = true;
+				endTimeField.enabled = true;
+
+				//2.结束进度条
+				stopProgressBar();
+
+				//3.提示失败
+				AlarmUtil.showMessage("同步告警异常，请稍后重试!");
+			}
+
+			//开始进度条
+			private function startProgressBar():void
+			{
+				_proKey = setInterval(function():void
+					{
+						//加载到95%就暂停等待结束
+						if (_proCur == 95)
+						{
+							clearInterval(_proKey);
+							return;
+						}
+						progressBar.setProgress(_proCur++, _proTotal);
+						progressBar.label = "正在同步告警 " + _proCur + "%";
+					}, 1000);
+			}
+
+			//结束滚动条
+			private function stopProgressBar():void
+			{
+				_proCur = 0;
+				clearInterval(_proKey);
+				progressBar.minimum = 0;
+				progressBar.maximum = 0;
+				progressBar.label = "正在同步告警 0%";
+			}
+
+			//关闭按钮 回调
+			public function showHideWindow(displayObject:DisplayObject = null):void
+			{
+				if (_syncAlarmWinShow)
+				{
+					_syncAlarmWinShow = false;
+					PopUpManager.removePopUp(this);
+				}
+				else
+				{
+					_syncAlarmWinShow = true;
+					PopUpManager.addPopUp(this, displayObject, false);
+					PopUpManager.centerPopUp(this);
+				}
+			}
+
+			//创建时间
+			protected function createTime(event:FlexEvent, remote:int):void
+			{
+				var date:Date = new Date();
+				date = new Date(date.getTime() + remote * 1000);
+				event.currentTarget.text = dateFormatter.format(date);
+			}
+		]]>
+	</fx:Script>
+	<s:HGroup top="-23"
+			  width="100%"
+			  height="17"
+			  horizontalAlign="right">
+		<mx:ProgressBar id="progressBar"
+						bottom="5"
+						width="166"
+						height="100%"
+						mode="manual"
+						visible="false"
+						trackHeight="15"
+						color="0X4169E1"
+						label="正在同步告警 0%"
+						labelPlacement="center"
+						barSkin="mx.skins.spark.ProgressMaskSkin"
+						maskSkin="mx.skins.spark.ProgressMaskSkin"
+						trackSkin="mx.skins.halo.ProgressTrackSkin"
+						indeterminateSkin="mx.skins.spark.ProgressIndeterminateSkin"/>
+	</s:HGroup>
+	<s:VGroup width="100%"
+			  height="100%"
+			  paddingTop="5"
+			  gap="20">
+		<s:VGroup width="100%">
+			<s:HGroup width="100%"
+					  height="100%"
+					  verticalAlign="middle"
+					  horizontalAlign="center">
+				<s:Label text="开始时间:"/>
+				<date:UXDateField id="startTimeField"
+								  color="0x000000"
+								  labelFunction="formatDate"
+								  yearNavigationEnabled="true"
+								  creationComplete="createTime(event,-600)"
+								  width="150"/>
+			</s:HGroup>
+			<s:HGroup width="100%"
+					  height="100%"
+					  verticalAlign="middle"
+					  horizontalAlign="center">
+				<s:Label text="结束时间:"/>
+				<date:UXDateField id="endTimeField"
+								  color="0x000000"
+								  labelFunction="formatDate"
+								  yearNavigationEnabled="true"
+								  creationComplete="createTime(event,0)"
+								  width="150"/>
+			</s:HGroup>
+		</s:VGroup>
+		<s:HGroup width="100%"
+				  horizontalAlign="center">
+			<s:Button id="syncBtn"
+					  label="同步告警"
+					  buttonMode="true"
+					  click="syncBtnClick()"/>
+			<s:Button id="interruptBtn"
+					  label="中断同步"
+					  enabled="false"
+					  buttonMode="true"
+					  click="interruptBtnClick()"/>
+			<s:Button id="closeBtn"
+					  label="关 闭"
+					  buttonMode="true"
+					  click="showHideWindow()"/>
+		</s:HGroup>
+	</s:VGroup>
+</panel:Window>

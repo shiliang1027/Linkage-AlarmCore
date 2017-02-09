@@ -1,0 +1,848 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009"
+		 xmlns:s="library://ns.adobe.com/flex/spark"
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		 implements="com.linkage.module.cms.alarm.framework.view.core.BaseAlarmView"
+		 xmlns:toolstate="com.linkage.module.cms.alarm.framework.view.toolstate.*"
+		 xmlns:grid="com.linkage.module.cms.alarm.framework.common.grid.*"
+		 width="100%"
+		 height="100%">
+	<s:layout>
+		<s:VerticalLayout gap="2"/>
+	</s:layout>
+	<fx:Script>
+		<![CDATA[
+			import com.ailk.common.system.logging.ILogger;
+			import com.ailk.common.system.logging.Log;
+			import com.linkage.module.cms.alarm.framework.common.event.ColumnResizeEvent;
+			import com.linkage.module.cms.alarm.framework.common.event.ColumnShiftEvent;
+			import com.linkage.module.cms.alarm.framework.common.param.ColumnConstants;
+			import com.linkage.module.cms.alarm.framework.common.param.ParamCache;
+			import com.linkage.module.cms.alarm.framework.common.util.AlarmUtil;
+			import com.linkage.module.cms.alarm.framework.controller.AlarmAction;
+			import com.linkage.module.cms.alarm.framework.module.server.source.ICollection;
+			import com.linkage.module.cms.alarm.framework.module.server.source.TreeCollectionView;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.AlarmEmergencyColumnRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.AlarmFilterWindow;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.AlarmIconColumnRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.AlarmSeverityColumnRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.HeaderCheckRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.HeaderSelectRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.IconSelectRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.JTAlarmSeverityColumnRenderer;
+			import com.linkage.module.cms.alarm.framework.view.columnrenderer.TreeCheckBoxRenderer;
+			import com.linkage.module.cms.alarm.framework.view.core.FilterCollection;
+			import com.linkage.module.cms.alarm.framework.view.core.ViewManager;
+			import com.linkage.module.cms.alarm.framework.view.resource.imagesclass.IconParam;
+			import com.linkage.system.structure.map.Map;
+			
+			import mx.collections.ArrayCollection;
+			import mx.collections.HierarchicalData;
+			import mx.controls.advancedDataGridClasses.AdvancedDataGridColumn;
+			import mx.core.IVisualElement;
+			import mx.events.AdvancedDataGridEvent;
+			import mx.events.IndexChangedEvent;
+			/**
+			 *日志记录器
+			 */
+			private var log:ILogger = Log.getLoggerByClass(AlarmView);
+			[Bindable]
+			/**
+			 * 视图
+			 */
+			private var _alarmsView:TreeCollectionView = null;
+			[Bindable]
+			/**
+			 * 告警列表容器
+			 */
+			private var _alarmsAC:ICollection = null;
+			[Bindable]
+			/**
+			 * 过滤告警列表视图
+			 */
+			private var _filterView:TreeCollectionView = null;
+			[Bindable]
+			/**
+			 * 过滤告警列表容器
+			 */
+			private var _filterAC:FilterCollection = null;
+			/**
+			 * 告警窗口过滤
+			 */
+			private var _alarmFilterWindow:AlarmFilterWindow = null;
+			/**
+			 * 图标状态列
+			 */
+			private var _iconColumn:AdvancedDataGridColumn = null;
+			/**
+			 * 分组列
+			 */
+			private var _groupColumn:AdvancedDataGridColumn = null;
+			/**
+			 * 告警表头过滤回调函数数组
+			 */
+			private var _filterResetArray:Array = new Array();
+			/**
+			 *刷新视图类型 0：刷新全部告警 1：刷新过滤告警
+			 */
+			private var _refreshViewType:int = 0;
+			/**
+			 * 数据源控制类
+			 */
+			private var _alarmAction:AlarmAction = null;
+			/**
+			 * 视图管理类
+			 */
+			private var _viewManager:ViewManager = null;
+			/**
+			 * CheckBox选中告警对象
+			 */
+			private var _checkAlarmMap:Map = new Map();
+			/**
+			 * 样式名称
+			 */
+			private var _alarmStyleName:String = null;
+			/**
+			 * 双击捕获事件
+			 */
+			private var _doubleClick:Function = null;
+			/**
+			 * 窗口唯一标识
+			 */
+			private var _windowUniquekey:String = null;
+			[Bindable]
+			/**
+			 * 工具栏展示
+			 */
+			private var _toolBarVisible:Boolean = true;
+			/**
+			 *页面过滤规则
+			 */
+			private var _pageFilterRule:String = null;
+			/**
+			 * 窗口ID
+			 */
+			private var _windowId:String = null;
+			/**
+			 * 视图标题
+			 */
+			[Bindable]
+			private var _viewTitle:String = null;
+			/**
+			 * 窗口类型 1:活动告警 0:清除告警
+			 */
+			private var _windowType:int = 1;
+
+			//初始化视图
+			public function initView():void
+			{
+				log.info("初始化视图++++++++++++++++++windowId=" + windowId);
+				//1.初始化视图管理器
+				_viewManager = new ViewManager(this, _alarmAction);
+
+				//2.初始化告警窗口过滤
+				_alarmFilterWindow = new AlarmFilterWindow();
+				_alarmFilterWindow.initWindow(this);
+
+				//3.初始化数据源
+				initDataProvider();
+
+				//4.初始化工具栏
+				toolBar.initTool(this);
+
+				//5.设置样式
+				if (_alarmStyleName != null)
+				{
+					flowAlarm.styleName = _alarmStyleName;
+				}
+			}
+
+			//初始化表格数据
+			public function initDataProvider():void
+			{
+				//1.初始化所有告警容器视图
+				_alarmsAC = _alarmAction.alarmSource(_windowId, _windowType);
+				_alarmsView = new TreeCollectionView(new HierarchicalData(_alarmsAC));
+				_alarmsView.filterFunction = AlarmUtil.defaultFilterFunction;
+				_alarmsView.sort = AlarmUtil.initDefaultSort();
+
+				//2.初始化过滤告警容器视图
+				_filterAC = new FilterCollection(_windowId, _windowType, _alarmAction, this);
+				_filterView = new TreeCollectionView(new HierarchicalData(_filterAC));
+				_filterView.filterFunction = AlarmUtil.defaultFilterFunction;
+				_filterView.sort = AlarmUtil.initDefaultSort();
+
+				//3.显示所有告警
+				showAllAlarm();
+			}
+
+			//显示所有告警数据
+			public function showAllAlarm():void
+			{
+				//1.设置告警展示数据源
+				flowAlarm.dataProvider = _alarmsView;
+				flowAlarm.displayItemsExpanded = false;
+
+				//2.设置告警不广播和还原其他参数
+				restoreHeaderFilter();
+				_refreshViewType = 0;
+				_pageFilterRule = null;
+				_alarmsAC.isDispatch = false;
+
+				//3.刷新所有告警视图
+				refresh();
+			}
+
+			//刷新所有告警视图
+			public function refresh():void
+			{
+				//1.刷新视图
+				_alarmsView.refresh();
+
+				//2.刷新统计数据
+				refreshAlarmStatNum();
+			}
+
+			//刷新告警统计信息
+			public function refreshAlarmStatNum():void
+			{
+				level1Num.text = String(_alarmsAC.level1Num);
+				level2Num.text = String(_alarmsAC.level2Num);
+				level3Num.text = String(_alarmsAC.level3Num);
+				level4Num.text = String(_alarmsAC.level4Num);
+				levelNum.text = String(_alarmsAC.level1Num + _alarmsAC.level2Num + _alarmsAC.level3Num + _alarmsAC.level4Num);
+				toolBar.notCleNum = _alarmsAC.notCleNum;
+				toolBar.notAckNum = _alarmsAC.notAckNum;
+				
+				_alarmAction.dispatchEvent(new Event(windowId+"_alarmStatNumChange"));
+			}
+
+			//显示过滤告警数据
+			public function showFilterAlarm():void
+			{
+				//1.设置告警展示数据源(重新实例化视图，因为数据源变化，视图没有发生变化，所以重新实例化一下)
+//				_filterView = new TreeCollectionView(new HierarchicalData(_filterAC));
+//				_filterView.filterFunction = AlarmUtil.defaultFilterFunction;
+//				_filterView.sort = AlarmUtil.initDefaultSort();
+				flowAlarm.dataProvider = _filterView;
+
+				//2.设置告警广播和刷新类型为过滤告警视图
+				_refreshViewType = 1;
+				_alarmsAC.isDispatch = true;
+
+				//3.刷新过滤告警视图
+				refreshFilterView();
+			}
+
+			//刷新过滤告警视图
+			public function refreshFilterView():void
+			{
+				//1.刷新视图
+				_filterView.refresh();
+
+				//2.刷新过滤告警统计数据
+				refreshFilterAlarmStatNum();
+			}
+
+			//刷新过滤告警统计信息
+			public function refreshFilterAlarmStatNum():void
+			{
+				level1Num.text = String(_filterAC.level1Num);
+				level2Num.text = String(_filterAC.level2Num);
+				level3Num.text = String(_filterAC.level3Num);
+				level4Num.text = String(_filterAC.level4Num);
+				toolBar.notCleNum = _filterAC.notCleNum;
+				toolBar.notAckNum = _filterAC.notAckNum;
+				levelNum.text = String(_filterAC.level1Num + _filterAC.level2Num + _filterAC.level3Num + _filterAC.level4Num);
+				_alarmAction.dispatchEvent(new Event(windowId+"_alarmStatNumChange"));
+			}
+
+			//设置展示列
+			public function set columns(array:Array):void
+			{
+				//1.设置展示列
+				var columns:Array = [];
+				_groupColumn = new AdvancedDataGridColumn();
+				_groupColumn.headerRenderer = new ClassFactory(HeaderCheckRenderer);
+				_groupColumn.width = 36;
+				columns.push(_groupColumn);
+				var column:AdvancedDataGridColumn = null;
+				//循环处理告警展示列
+				for each (var obj:Object in array)
+				{
+					column = new AdvancedDataGridColumn();
+					column.dataField = obj.id;
+					column.headerText = obj.name;
+					column.width = int(AlarmUtil.getColumnWidth(ParamCache.columnKeyWidthMap, column.dataField, column.headerText));
+					log.info("column.dataField:"+column.dataField+"---------column.headerText:"+column.headerText + "------column.width:" + column.width);
+					switch (column.dataField)
+					{
+						case ColumnConstants.KEY_AlarmIcon: // 图标列
+							_iconColumn = column;
+							column.itemRenderer = new ClassFactory(AlarmIconColumnRenderer);
+							column.headerRenderer = new ClassFactory(IconSelectRenderer); //表头渲染器
+							break;
+						case ColumnConstants.KEY_AlarmSeverityLabel: //告警级别
+							column.itemRenderer = new ClassFactory(AlarmSeverityColumnRenderer);
+							column.headerRenderer = new ClassFactory(HeaderSelectRenderer); //表头渲染器
+							break;
+//						case ColumnConstants.KEY_JT_AlarmSeverityLabel: //网管告警级别
+//							column.itemRenderer = new ClassFactory(JTAlarmSeverityColumnRenderer);
+//							column.headerRenderer = new ClassFactory(HeaderSelectRenderer); //表头渲染器
+//							break;
+						case ColumnConstants.KEY_AlarmEmergencyLabel: //自定义告警级别
+							column.itemRenderer = new ClassFactory(AlarmEmergencyColumnRenderer);
+							column.headerRenderer = new ClassFactory(HeaderSelectRenderer); //表头渲染器
+							break;
+						default:
+							column.headerRenderer = new ClassFactory(HeaderSelectRenderer); //表头渲染器
+					}
+					columns.push(column);
+				}
+				flowAlarm.columns = columns;
+			}
+
+			//还原表头过滤
+			private function restoreHeaderFilter():void
+			{
+				//1.还原过滤表头
+				for each (var callback:Function in _filterResetArray)
+				{
+					callback.call(this);
+				}
+
+				//2.请过过滤数组
+				_filterResetArray = new Array();
+
+				//3.清空过滤规则
+				_alarmFilterWindow.clearFilterRule();
+			}
+
+			//设置动态过滤
+			public function filterAlarm(value:String, callback:Function = null):void
+			{
+				log.warn("过滤告警信息filterStr=" + value);
+				if (value == null || value == '')
+				{
+					//1.显示所有告警
+					showAllAlarm();
+
+					//2.如果回调方法不为空执行回调方法
+					if (callback != null)
+					{
+						callback.call(this, _alarmsAC.dataArray);
+					}
+				}
+				else
+				{
+					//1.过滤告警
+					_pageFilterRule = value;
+					_filterAC.filterAlarm(value);
+
+					//2.显示过滤告警
+					showFilterAlarm();
+
+					//3.还原表头过滤
+					restoreHeaderFilter();
+
+					//4.如果回调方法不为空执行回调方法
+					if (callback != null)
+					{
+						callback.call(this, _filterAC.dataArray);
+					}
+				}
+			}
+
+			//表头动态过滤
+			public function headerFilterAlarm(value:String):void
+			{
+				log.info("过滤告警信息filterStr=" + value);
+				if (value == null || value == '')
+				{
+					//显示所有告警
+					showAllAlarm();
+				}
+				else
+				{
+					//1.过滤告警
+					_filterAC.filterAlarm((_pageFilterRule == null) ? value : (_pageFilterRule + "&" + value));
+
+					//2.显示过滤告警
+					showFilterAlarm();
+				}
+			}
+
+			//表头选择事件
+			public function headerSelectChange(value:String, field:String, title:String, success:Function, restore:Function):void
+			{
+				var recoverField:String = AlarmUtil.recoverColumn(field);
+				if (value == "1")
+				{
+					if (refreshViewType == 0) //告警视图
+					{
+						_alarmsView.sort = AlarmUtil.initFiledSort(recoverField, false);
+						_alarmsView.refreshByHand();
+					}
+					else //过滤视图
+					{
+						_filterView.sort = AlarmUtil.initFiledSort(recoverField, false);
+						_filterView.refreshByHand();
+					}
+				}
+				else if (value == "2")
+				{
+					if (refreshViewType == 0) //告警视图
+					{
+						_alarmsView.sort = AlarmUtil.initFiledSort(recoverField);
+						_alarmsView.refreshByHand();
+					}
+					else //过滤视图
+					{
+						_filterView.sort = AlarmUtil.initFiledSort(recoverField);
+						_filterView.refreshByHand();
+					}
+				}
+				else if (value == "3")
+				{
+					//1.窗口列过滤
+					_alarmFilterWindow.showHideWindow(parentApplication as DisplayObject);
+
+					//2.初始化窗口参数信息
+					if (_alarmFilterWindow.checkFirstHeaderFilter() && _pageFilterRule == null)
+					{
+						_alarmFilterWindow.initWindowParamInfo(field, recoverField, title, success, alarmsAC.dataArray);
+					}
+					else
+					{
+						_alarmFilterWindow.initWindowParamInfo(field, recoverField, title, success, filterAC.dataArray);
+					}
+
+					//3.添加还原回调函数
+					_filterResetArray.push(restore);
+
+				}
+			}
+
+			//告警双击事件
+			public function alarmsDoubleClick(event:MouseEvent):void
+			{
+				if (_doubleClick != null)
+				{
+					_doubleClick.call(this, event);
+				}
+			}
+
+			//设置复选框是否选中
+			public function checkBoxAlarmMap(data:Object, isCheck:Boolean):void
+			{
+				log.warn("[checkBoxAlarmMap]data[ColumnConstants.KEY_AlarmUniqueId]:{0},isCheck:{1}",data[ColumnConstants.KEY_AlarmUniqueId],isCheck);
+				var alarmId:String = data[ColumnConstants.KEY_AlarmUniqueId];
+				//添加告警选中
+				if (isCheck)
+				{
+					//1.添加到容器中
+					_checkAlarmMap.put(alarmId, data);
+					//2.添加告警锁定
+					if (toolBar.lockStatus)
+					{
+						toolBar.alarmLock.lockAlarm(data);
+					}
+				}
+				else
+				{
+					//1.清除告警锁定
+					_checkAlarmMap.remove(alarmId);
+					//2.清除告警锁定
+					if (toolBar.lockStatus && !toolBar.isLockScreen)
+					{
+						if (_checkAlarmMap.isEmpty())
+						{
+							toolBar.toolAlarmLock();
+						}
+						else
+						{
+							toolBar.alarmLock.clearLock(data);
+						}
+					}
+				}
+				//刷新视图
+				if (_refreshViewType == 0)
+				{
+					_alarmsView.refreshByHand();
+				}
+				else
+				{
+					_filterView.refreshByHand();
+				}
+				
+				log.warn("[checkBoxAlarmMap]_checkAlarmMap.size:{0}",_checkAlarmMap.size);
+			}
+
+			//设置复选框是否选中(批量)
+			public function checkBoxAlarmMapBatch(data:Object, isCheck:Boolean):void
+			{
+				//添加告警选中
+				if (isCheck)
+				{
+					//1.添加到容器中
+					var alarmId:String = data[ColumnConstants.KEY_AlarmUniqueId];
+					_checkAlarmMap.put(alarmId, data);
+					//2.添加告警锁定
+					if (toolBar.lockStatus)
+					{
+						toolBar.alarmLock.lockAlarm(data);
+					}
+				}
+			}
+
+			//所有告警视图全选
+			public function setAllAlarmSelected(isSelected:Boolean):void
+			{
+				//设置选中容器清空
+				if (!isSelected)
+				{
+					//1.清除告警锁定
+					_checkAlarmMap.clear();
+					//2.清除告警锁定
+					if (toolBar.lockStatus && !toolBar.isLockScreen)
+					{
+						toolBar.toolAlarmLock();
+					}
+				}
+				//设置告警选中
+				if (_refreshViewType == 0)
+				{
+					selectAllAlarm(isSelected, _alarmsAC.dataArray);
+					_alarmsView.refreshByHand();
+				}
+				else
+				{
+					selectAllAlarm(isSelected, _filterAC.dataArray);
+					_filterView.refreshByHand();
+				}
+			}
+
+			//设置告警是否全选
+			public function selectAllAlarm(isSelected:Boolean, alarmArray:Array):void
+			{
+				var alarmList:ArrayCollection = null;
+				for each (var alarm:Object in alarmArray)
+				{
+					alarmList = AlarmUtil.findAllChildAlarmList(alarm);
+					for each (var child:Object in alarmList)
+					{
+						//1.设置告警对象选中属性
+						AlarmUtil.addAlarmCheckBox(child, isSelected);
+
+						//2.设置复选框是否选中
+						checkBoxAlarmMapBatch(child, isSelected);
+					}
+				}
+			}
+
+			//初始化视图标题
+			public function initViewTitle():void
+			{
+				if (_viewTitle)
+				{
+					vTitle.text = _viewTitle;
+					//if(
+				}
+			}
+
+			//打开节点
+			protected function alarmsItemOpenHandler(event:AdvancedDataGridEvent):void
+			{
+				//展开默认按告警发生时间排序
+				//AlarmUtil.sortAlarmChildrenArray(event.item);
+				_alarmsView.sort = AlarmUtil.initDefaultSort();
+				_alarmsView.refresh();
+			}
+
+			//排序告警子数组
+			public function sortAlarmChildrenArray(alarmId:String):void
+			{
+				//展开默认按告警发生时间排序
+				//var alarm:Object=_alarmsAC.getAlarmByAlarmId(alarmId, windowId);
+				//AlarmUtil.sortAlarmChildrenArray(alarm);
+				_filterView.sort = AlarmUtil.initDefaultSort();
+				_filterView.refresh();
+			}
+
+			//显示隐藏状态标识列
+			public function columnIconShow():void
+			{
+				if (_iconColumn != null)
+				{
+					_iconColumn.visible = !_iconColumn.visible;
+				}
+			}
+
+			//设置行
+			private function setRowBackGroundColor(alarm:Object):uint
+			{
+				return AlarmUtil.getDataGridBackColor(alarm, windowType);
+			}
+
+			//设置默认
+			private function setRowBackGroundDefault(alarm:Object):uint
+			{
+				return 0;
+			}
+			
+			//列宽度更改事件
+			protected function columnStretchHandler(event:AdvancedDataGridEvent):void
+			{
+				var column:AdvancedDataGridColumn = flowAlarm.columns[event.columnIndex];
+				if (column != null)
+				{
+					_alarmAction.dispatchEvent(new ColumnResizeEvent(windowId + ColumnResizeEvent.COLUMN_RESIZE, column.dataField, event.columnIndex, column.width));
+				}
+			}
+
+			//列头拖动
+			protected function flowAlarm_headerShiftHandler(event:IndexChangedEvent):void
+			{
+				//1.通知其他窗口列变化
+				_alarmAction.dispatchEvent(new ColumnShiftEvent(windowId + ColumnShiftEvent.COLUMN_SHIFT, event.newIndex, event.oldIndex, windowType));
+				//2.保存数据库
+				_viewManager.saveColumnOrder();
+			}
+
+			//是否锁定视图
+			public function lockAlarmView(lock:Boolean):void
+			{
+				//设置告警选中
+				if (_refreshViewType == 0)
+				{
+					_alarmsView.isRefresh = !lock;
+				}
+				else
+				{
+					_filterView.isRefresh = !lock;
+				}
+				if(lock)
+				{
+					flowAlarm.rowColorFunction = setRowBackGroundDefault;
+				}
+				else
+				{
+					flowAlarm.rowColorFunction = setRowBackGroundColor;
+				}
+			}
+			
+			public function clearCheckBoxMap():void
+			{
+				//1.清空临时列表
+				_checkAlarmMap.clear();
+
+				//2.重置表头选中
+				if (_groupColumn != null)
+				{
+					_groupColumn.headerRenderer = new ClassFactory(HeaderCheckRenderer);
+				}
+			}
+
+			public function addToolButton(button:IVisualElement, position:String = null):void
+			{
+				if (position == "last")
+				{
+					toolBar.addElement(button);
+				}
+				else
+				{
+					toolBar.addElementAt(button, 0);
+				}
+			}
+
+			public function set viewTitle(viewTitle:String):void
+			{
+				if (vTitle)
+				{
+					vTitle.text = viewTitle;
+				}
+				else
+				{
+					_viewTitle = viewTitle;
+				}
+			}
+
+			public function set doubleClick(doubleClick:Function):void
+			{
+				_doubleClick = doubleClick;
+			}
+
+			public function set alarmAction(alarmAction:AlarmAction):void
+			{
+				_alarmAction = alarmAction;
+			}
+
+			public function get refreshViewType():int
+			{
+				return _refreshViewType;
+			}
+
+			public function get checkAlarmMap():Map
+			{
+				return _checkAlarmMap;
+			}
+
+			public function get alarmsAC():ICollection
+			{
+				return _alarmsAC;
+			}
+
+			public function get filterAC():FilterCollection
+			{
+				return _filterAC;
+			}
+
+			public function get alarmAction():AlarmAction
+			{
+				return _alarmAction;
+			}
+
+			[Inspectable(category="General", enumeration="0,1,2,3,4,5", defaultValue="1")]
+			public function set windowType(windowType:int):void
+			{
+				log.warn("windowType:" + windowType);
+				_windowType = windowType;
+				log.warn("_windowType:" + _windowType);
+			}
+
+			public function set toolBarVisible(value:Boolean):void
+			{
+				_toolBarVisible = value;
+			}
+
+			public function get windowType():int
+			{
+				return _windowType;
+			}
+
+			public function get alarmsView():TreeCollectionView
+			{
+				return _alarmsView;
+			}
+
+			public function set alarmStyleName(value:String):void
+			{
+				_alarmStyleName = value;
+			}
+
+			public function set windowUniquekey(windowUniquekey:String):void
+			{
+				_windowUniquekey = windowUniquekey;
+			}
+
+			public function get windowUniquekey():String
+			{
+				return _windowUniquekey;
+			}
+
+			public function get filterView():TreeCollectionView
+			{
+				return _filterView;
+			}
+
+			public function set windowId(windowId:String):void
+			{
+				_windowId = windowId;
+			}
+
+			public function get windowId():String
+			{
+				return _windowId;
+			}
+
+			public function get getFlowAlarm():AlarmDataGrid
+			{
+				return flowAlarm;
+			}
+			
+			public function get getVTitle():spark.components.Label
+			{
+				return vTitle;
+			}
+
+			public function get getParentApplication():DisplayObject
+			{
+				return parentApplication as DisplayObject;
+			}
+
+			public function get getToolBar():ToolBar
+			{
+				return toolBar;
+			}
+		]]>
+	</fx:Script>
+	<fx:Style source="/com/linkage/module/cms/alarm/framework/view/resource/css/alarm.css"/>
+	<s:HGroup height="17"
+			  width="100%"
+			  minWidth="5"
+			  visible="{_toolBarVisible}"
+			  includeInLayout="{_toolBarVisible}">
+		<s:HGroup width="50%"
+				  textAlign="left"
+				  horizontalAlign="left"
+				  verticalAlign="middle">
+			<s:Label id="vTitle"
+					 minWidth="16" text="{_viewTitle}"/>
+			<s:Label id="levelNum"/>
+			<mx:Image source="{IconParam.iconAlarmRed}"
+					  width="12"
+					  height="12"/>
+			<mx:Label id="level1Num"/>
+			<mx:Image source="{IconParam.iconAlarmOrange}"
+					  width="12"
+					  height="12"/>
+			<mx:Label id="level2Num"/>
+			<mx:Image source="{IconParam.iconAlarmYellow}"
+					  width="12"
+					  height="12"/>
+			<mx:Label id="level3Num"/>
+			<mx:Image source="{IconParam.iconAlarmBlue}"
+					  width="12"
+					  height="12"/>
+			<mx:Label id="level4Num"/>
+		</s:HGroup>
+		<s:HGroup width="50%"
+				  horizontalAlign="right"
+				  verticalAlign="middle"
+				  textAlign="right"
+				  paddingRight="20"
+				  paddingTop="2"
+				  gap="3">
+			<toolstate:ToolBar id="toolBar"/>
+		</s:HGroup>
+	</s:HGroup>
+	<grid:AlarmDataGrid id="flowAlarm"
+						paddingTop="1"
+						textAlign="left"
+						fontWeight="normal"
+						sortExpertMode="true"
+						liveScrolling="false"
+						showScrollTips="false"
+						sortableColumns="false"
+						allowMultipleSelection="true"
+						rowColorFunction="setRowBackGroundColor"
+						groupItemRenderer="{new ClassFactory(TreeCheckBoxRenderer)}"
+						disclosureClosedIcon="{IconParam.disclosureClosedIcon}"
+						disclosureOpenIcon="{IconParam.disclosureOpenIcon}"
+						headerShift="flowAlarm_headerShiftHandler(event)"
+						columnStretch="columnStretchHandler(event)"
+						itemOpen="alarmsItemOpenHandler(event)"
+						doubleClick="alarmsDoubleClick(event)"
+						horizontalScrollPolicy="auto"
+						doubleClickEnabled="true"
+						folderClosedIcon="{null}"
+						folderOpenIcon="{null}"
+						defaultLeafIcon="{null}"
+						minWidth="5"
+						width="100%"
+						height="100%"
+						editable="false"
+						enabled="true">
+
+	</grid:AlarmDataGrid>
+</s:Group>

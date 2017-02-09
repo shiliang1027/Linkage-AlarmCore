@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:MXDataGridItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009"
+						  xmlns:s="library://ns.adobe.com/flex/spark"
+						  xmlns:mx="library://ns.adobe.com/flex/mx"
+						  focusEnabled="true">
+	<fx:Script>
+		<![CDATA[
+			//左边距离
+			private function paddingLeft(type:String):int
+			{
+				if (type == "2")
+				{
+					return 20;
+				}
+				return 0;
+			}
+
+			//字体粗细
+			private function fontWeight(type:String):String
+			{
+				if (type == "2")
+				{
+					return "normal";
+				}
+				return "bold";
+			}
+		]]>
+	</fx:Script>
+	<s:Label text="{data.name}"
+			 paddingLeft="{paddingLeft(data.type)}"
+			 fontWeight="{fontWeight(data.type)}"/>
+</s:MXDataGridItemRenderer>

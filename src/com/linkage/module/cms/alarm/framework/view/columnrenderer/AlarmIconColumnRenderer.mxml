@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:MXAdvancedDataGridItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009"
+								  xmlns:s="library://ns.adobe.com/flex/spark"
+								  xmlns:mx="library://ns.adobe.com/flex/mx"
+								  preinitialize="initIconInfo()"
+								  dataChange="alarmDataChange()"
+								  clipAndEnableScrolling="true"
+								  autoDrawBackground="false"
+								  focusEnabled="false">
+	<fx:Script>
+		<![CDATA[
+			import com.linkage.module.cms.alarm.framework.common.param.ParamCache;
+			import com.linkage.module.cms.alarm.framework.view.resource.imagesclass.IconParam;
+			import com.linkage.system.structure.map.Map;
+			
+			import mx.controls.Image;
+
+			private var stateIconMap:Map=new Map();
+			private var imageMap:Map=new Map();
+			private var stateObj:Object=null;
+			private var stateIcon:Map=null;
+
+			//设置状态标识
+			protected function initIconInfo():void
+			{
+				var windowId:String=parentDocument.windowId;
+				var iconArray:Array=ParamCache.stateIconMap.get(windowId);
+				if (iconArray != null)
+				{
+					var image:Image=null;
+					var widthPos:Number=3;
+					for each (var iconObj:Object in iconArray)
+					{
+						for (var stateEnname:String in iconObj)
+						{
+							image=new Image();
+							image.width=16;
+							image.height=16;
+							image.x=widthPos;
+							image.y=1;
+							widthPos+=20;
+							addElement(image);
+							imageMap.put(stateEnname, image);
+							stateIconMap.put(stateEnname, iconObj[stateEnname]);
+						}
+					}
+				}
+			}
+
+			//数据发生变更
+			protected function alarmDataChange():void
+			{
+				if (data != null)
+				{
+					imageMap.forEach(function(stateEnname:String, image:Image):void
+						{
+							stateIcon=stateIconMap.get(stateEnname);
+							stateObj=stateIcon.get(data[stateEnname]);
+							if (stateObj != null)
+							{
+								image.source=IconParam.findAlarmStateIcon(stateObj["statePic"]);
+								image.toolTip=stateObj["stateChname"];
+							}
+							else
+							{
+								stateObj=stateIcon.get("-1");
+								if (stateObj != null)
+								{
+									image.source=IconParam.findAlarmStateIcon(stateObj["statePic"]);
+									image.toolTip=stateObj["stateChname"];
+								}
+							}
+						});
+				}
+			}
+		]]>
+	</fx:Script>
+</s:MXAdvancedDataGridItemRenderer>
